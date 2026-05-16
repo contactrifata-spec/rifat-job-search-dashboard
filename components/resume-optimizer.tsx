@@ -9,6 +9,7 @@ type Step = "upload" | "jd" | "analyzing" | "results";
 interface ResumeData {
   fullText: string;
   fileName: string;
+  originalFile: File;
 }
 
 function ScoreCircle({ score, label }: { score: number; label: string }) {
@@ -65,7 +66,7 @@ export default function ResumeOptimizer() {
       const res = await fetch("/api/parse-resume", { method: "POST", body: formData });
       const data = await res.json();
       if (data.text) {
-        setResumeData({ fullText: data.text, fileName: file.name });
+        setResumeData({ fullText: data.text, fileName: file.name, originalFile: file });
         setStep("jd");
       } else {
         alert("Could not parse PDF. Please try another file.");
@@ -139,88 +140,21 @@ export default function ResumeOptimizer() {
     if (!resumeData) return;
     setIsGeneratingPDF(true);
     try {
-      const { default: jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ unit: "pt", format: "letter" });
-      const margin = 56;
-      const pageW = doc.internal.pageSize.getWidth();
-      const usableW = pageW - margin * 2;
-      let y = margin;
+      const formData = new FormData();
+      formData.append("pdf", resumeData.originalFile);
+      formData.append("originalSummary", originalSummary);
+      formData.append("optimizedSummary", optimizedSummary);
 
-      const lines = resumeData.fullText.split("\n").filter((l) => l.trim());
-      let summaryReplaced = false;
+      const res = await fetch("/api/generate-optimized-pdf", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Server error");
 
-      // Helpers
-      const addText = (text: string, size: number, bold: boolean, color: [number, number, number] = [30, 30, 30]) => {
-        doc.setFontSize(size);
-        doc.setFont("helvetica", bold ? "bold" : "normal");
-        doc.setTextColor(...color);
-        const wrapped = doc.splitTextToSize(text, usableW);
-        if (y + wrapped.length * size * 1.4 > doc.internal.pageSize.getHeight() - margin) {
-          doc.addPage();
-          y = margin;
-        }
-        doc.text(wrapped, margin, y);
-        y += wrapped.length * size * 1.4;
-      };
-
-      const addRule = () => {
-        doc.setDrawColor(180, 180, 180);
-        doc.line(margin, y, pageW - margin, y);
-        y += 8;
-      };
-
-      let isFirst = true;
-      let isSecond = false;
-      const sectionKeywords = ["SKILLS", "WORK EXPERIENCE", "EDUCATION", "CERTIFICATIONS", "EXPERIENCE"];
-
-      for (const line of lines) {
-        const upper = line.trim().toUpperCase();
-        const isSection = sectionKeywords.some((k) => upper.startsWith(k));
-
-        if (isFirst) {
-          // Name
-          addText(line.trim(), 20, true, [15, 23, 42]);
-          y += 2;
-          isFirst = false;
-          isSecond = true;
-          continue;
-        }
-        if (isSecond) {
-          addText(line.trim(), 9, false, [100, 116, 139]);
-          y += 6;
-          isSecond = false;
-          continue;
-        }
-        if (line.trim() === originalSummary && !summaryReplaced) {
-          addText(optimizedSummary || line.trim(), 10, false, [51, 65, 85]);
-          y += 8;
-          summaryReplaced = true;
-          continue;
-        }
-        if (isSection) {
-          y += 10;
-          addText(line.trim(), 10, true, [30, 64, 175]);
-          addRule();
-          continue;
-        }
-        if (line.trim().startsWith("●") || line.trim().startsWith("•")) {
-          const txt = "  " + line.trim().replace(/^[●•]\s*/, "• ");
-          addText(txt, 9.5, false, [51, 65, 85]);
-          continue;
-        }
-        // Date-like lines (right-aligned hint)
-        if (/\d{2}\/\d{4}/.test(line) || /\d{4}\s*-\s*\d{4}/.test(line) || line.includes("PRESENT")) {
-          doc.setFontSize(9);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 116, 139);
-          doc.text(line.trim(), pageW - margin, y, { align: "right" });
-          y += 13;
-          continue;
-        }
-        addText(line.trim(), 9.5, false, [51, 65, 85]);
-      }
-
-      doc.save(`${resumeData.fileName.replace(".pdf", "")}_ATS_Optimized.pdf`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${resumeData.fileName.replace(".pdf", "")}_ATS_Optimized.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
       alert("Error generating PDF. Please try again.");

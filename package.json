@@ -24,6 +24,8 @@
     "tailwind-merge": "^2.2.0",
     "jspdf": "^2.5.1",
     "pdf-parse": "^1.1.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^3.11.174",
     "mammoth": "^1.7.2"
   },
   "devDependencies": {
